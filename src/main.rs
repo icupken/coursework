@@ -9,7 +9,7 @@ use lzw;
 fn build_ui(app: &gtk::Application) {
     let glade_src = include_str!("./layout.glade");
     let builder = Builder::from_string(glade_src);
-
+    // todo: make something pls.... it's awful
     let window: gtk::ApplicationWindow = builder.object("win1")
         .expect("Can't create window-main!");
     let about_win: gtk::Window = builder.object("win2")
