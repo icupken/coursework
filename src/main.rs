@@ -1,89 +1,63 @@
-use gio::prelude::*;
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use gtk::prelude::*;
-use gtk::{Application, Builder};
-use std::collections::HashMap;
-
-fn compress(data: &[u8]) -> Vec<u32> {
-    // Build initial dictionary.
-    let mut dictionary: HashMap<Vec<u8>, u32> = (0u32..=255)
-        .map(|i| (vec![i as u8], i))
-        .collect();
-
-    let mut w = Vec::new();
-    let mut compressed = Vec::new();
-
-    for &b in data {
-        let mut wc = w.clone();
-        wc.push(b);
-
-        if dictionary.contains_key(&wc) {
-            w = wc;
-        } else {
-            // Write w to output.
-            compressed.push(dictionary[&w]);
-
-            // wc is a new sequence; add it to the dictionary.
-            dictionary.insert(wc, dictionary.len() as u32);
-            w.clear();
-            w.push(b);
-        }
-    }
-    // Write remaining output if necessary.
-    if !w.is_empty() {
-        compressed.push(dictionary[&w]);
-    }
-    compressed
-}
-
-fn decompress(mut data: &[u32]) -> Vec<u8> {
-    // Build the dictionary.
-    let mut dictionary: HashMap::<u32, Vec<u8>> = (0u32..=255)
-        .map(|i| (i, vec![i as u8]))
-        .collect();
-
-    let mut w = dictionary[&data[0]].clone();
-    data = &data[1..];
-    let mut decompressed = w.clone();
-
-    for &k in data {
-        let entry = if dictionary.contains_key(&k) {
-            dictionary[&k].clone()
-        } else if k == dictionary.len() as u32 {
-            let mut entry = w.clone();
-            entry.push(w[0]);
-            entry
-        } else {
-            panic!("Invalid dictionary!");
-        };
-
-        decompressed.extend_from_slice(&entry);
-
-        // New sequence; add it to the dictionary.
-        w.push(entry[0]);
-        dictionary.insert(dictionary.len() as u32, w);
-
-        w = entry;
-    }
-    decompressed
-}
+use gtk::{gio};
+use gtk::{Application, Builder, Menu, MenuItem};
+use lzw;
 
 fn build_ui(app: &gtk::Application) {
     let glade_src = include_str!("./layout.glade");
     let builder = Builder::from_string(glade_src);
 
     let window: gtk::ApplicationWindow = builder.object("win1")
-        .expect("Не получилось создать окно");
+        .expect("Can't create window-main!");
+    let about_win: gtk::Window = builder.object("win2")
+        .expect("Can't create window-about!");
     let button: gtk::Button = builder.object("btn_1")
-        .expect("Не получилось создать кнопку");
+        .expect("Can't create button-encode!");
     let txt_ipt: gtk::TextView = builder.object("txt_ipt")
-        .expect("Не получилось создать поле ввода");
+        .expect("Can't create input field!");
     let txt_opt1: gtk::TextView = builder.object("txt_otp1")
-        .expect("Не получилось создать поле вывода1");
+        .expect("Can't create output field1!");
     let txt_opt2: gtk::TextView = builder.object("txt_otp2")
-        .expect("Не получилось создать поле вывода2");
+        .expect("Can't create output field2!");
+    let menubar: gtk::MenuBar = builder.object("menubar")
+        .expect("Can't create menubar!");
 
     window.set_application(Some(app));
     window.show_all();
+
+    // build menubar
+    let menu_file = Menu::new();
+    let menu_help = Menu::new();
+
+    let file = MenuItem::with_label("File");
+    let open = MenuItem::with_label("Open");
+    let save = MenuItem::with_label("Save");
+    let quit = MenuItem::with_label("Quit");
+
+    let help = MenuItem::with_label("Help");
+    let about = MenuItem::with_label("About");
+
+    menu_file.append(&open);
+    menu_file.append(&save);
+    menu_file.append(&quit);
+
+    menu_help.append(&about);
+
+    file.set_submenu(Some(&menu_file));
+    help.set_submenu(Some(&menu_help));
+
+    menubar.append(&file);
+    menubar.append(&help);
+
+    quit.connect_activate(move |_| {
+        window.close();
+    });
+    about.connect_activate(move |_| {
+        about_win.show();
+    });
 
     button.connect_clicked(move |_| {
         let read_buf = txt_ipt.buffer().unwrap();
@@ -93,21 +67,23 @@ fn build_ui(app: &gtk::Application) {
         let start = read_buf.start_iter();
         let end = read_buf.end_iter();
 
-        let read_string = read_buf.text(&start, &end, false)
-            .expect("Считать строку не удалось");
+        let read_string = read_buf
+            .text(&start, &end, false)
+            .expect("Can't read buffer!");
 
-        output_buf2.set_text(""); // очистка буфера
-        output_buf1.set_text(""); // очистка буфера
+        output_buf2.set_text(""); // clear buff
+        output_buf1.set_text(""); // clear buff
         let inp_string_as_bytes = format!("{:?}", read_string.as_bytes());
         output_buf1.set_text(&inp_string_as_bytes);
-        let compress_byte = compress(read_string.as_bytes());
+        let compress_byte = lzw::compress(read_string.as_bytes());
         let comp_str = format!("{:?}", compress_byte);
         output_buf2.set_text(&comp_str);
     });
 }
 
 fn main() {
-    let app = Application::new(Some("com.icupken.LZW"), gio::ApplicationFlags::FLAGS_NONE);
+    let app = Application::new(Some("com.icupken.LZW"),
+                               gio::ApplicationFlags::FLAGS_NONE);
     app.connect_activate(build_ui);
     app.run();
 }
