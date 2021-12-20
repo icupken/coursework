@@ -2,10 +2,38 @@
 // #![allow(unused_variables)]
 
 use gtk::prelude::*;
-use gtk::{gio};
+use gtk::{FileChooserAction, gio, ResponseType};
 use gtk::{Application, Builder, Menu, MenuItem};
-use gtk::FileChooserAction::Open;
 use lzw;
+use std::fs::*;
+use std::io::*;
+use std::ops::AddAssign;
+
+fn read(path: &str) -> Result<Vec<f64>> {
+    let file = File::open(path)?; // open file by given path
+    let br = BufReader::new(file);
+    // create an empty vector, type of the stored elements will be inferred
+    let mut v = Vec::new();
+    for line in br.lines() {
+        let line = line?;
+        let n = line
+            .trim() // trim "whitespaces"
+            .parse()
+            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+        v.push(n); // push acquired integer to the vector
+    }
+    Ok(v) // everything is Ok, return vector
+}
+
+fn write(path: &str, data: Vec<f64>) -> Result<()> {
+    let mut output = File::create(path)?;
+    for i in 0..data.len() {
+        if data[i] > 0.0 {
+            write!(output, "{}\n", data[i])?;
+        }
+    }
+    Ok(())
+}
 
 fn build_ui(app: &gtk::Application) {
     let glade_src = include_str!("./layout.glade");
@@ -60,12 +88,40 @@ fn build_ui(app: &gtk::Application) {
     quit.connect_activate(move |_| {
         window.close();
     });
+
     open.connect_activate(move |_| {
-        // let file_win = gtk::FileChooserDialog::new(None, None, Open);
-        // let test = file_win.preview_filename().unwrap();
-        // println!("{:?}", test);
-        // file_win.show_all();
+        let dialog = gtk::FileChooserDialog::builder().build();
+        dialog.set_action(FileChooserAction::Open);
+        dialog.set_title("Open File");
+        dialog.add_button("Open", ResponseType::Accept);
+        dialog.add_button("Cancel", ResponseType::Cancel);
+        let res = dialog.run();
+        if res == ResponseType::Accept {
+            let filename = dialog.filename().expect("Filename to open not received!");
+            println!("{:?}", filename);
+            dialog.close();
+        } else if res == ResponseType::Cancel {
+            dialog.close();
+        }
     });
+
+    save.connect_activate(move |_| {
+        let dialog = gtk::FileChooserDialog::builder().build();
+        dialog.set_action(FileChooserAction::Save);
+        dialog.set_title("Save File");
+        dialog.add_button("Save", ResponseType::Accept);
+        dialog.add_button("Cancel", ResponseType::Cancel);
+        dialog.set_do_overwrite_confirmation(true);
+        let res = dialog.run();
+        if res == ResponseType::Accept {
+            let filename = dialog.filename().expect("Filename to save not received!");
+            println!("{:?}", filename);
+            dialog.close();
+        } else if res == ResponseType::Cancel {
+            dialog.close();
+        }
+    });
+
     about.connect_activate(move |_| {
         about_win.show();
     });
@@ -88,7 +144,10 @@ fn build_ui(app: &gtk::Application) {
 
         // read input message and convert to bytes
         let input_byte_arr = read_string.as_bytes();
-        let input_byte_str = format!("{:?}", &input_byte_arr);
+        let mut input_byte_str = String::new();
+        for i in input_byte_arr {
+            input_byte_str.add_assign(&format!("{:?},", &i));
+        };
         // print input_byte_string to buff 1
         output_buf1.set_text(&input_byte_str);
 
@@ -105,7 +164,11 @@ fn build_ui(app: &gtk::Application) {
         );
         stats_buf.set_text(&profit_str);
         // preparing to output byte_string after compress
-        let comp_str = format!("{:?}", compress_byte);
+        let mut comp_str = String::new();
+        for i in &compress_byte {
+            comp_str.add_assign(&format!("{:?},", &i));
+        };
+
         // print compress_byte_string to buff 2
         output_buf2.set_text(&comp_str);
     });
