@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-pub fn compress(byte_string: &[u8]) -> Vec<u32> {
+pub fn compress(byte_string: &Vec<u32>) -> Vec<u32> {
     // Build initial dictionary.
-    let mut dictionary: HashMap<Vec<u8>, u32> = (0u32..=255)
-        .map(|i| (vec![i as u8], i))
+    let mut dictionary: HashMap<Vec<u32>, u32> = (0u32..=2047)
+        .map(|i| (vec![i], i))
         .collect();
 
     let mut w = Vec::new();

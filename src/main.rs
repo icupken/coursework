@@ -2,30 +2,31 @@
 // #![allow(unused_variables)]
 
 use gtk::prelude::*;
-use gtk::{FileChooserAction, gio, ResponseType};
-use gtk::{Application, Builder, Menu, MenuItem};
+use gtk::*;
 use lzw;
 use std::fs::*;
 use std::io::*;
-use std::ops::AddAssign;
+use std::path::PathBuf;
 
-fn read(path: &str) -> Result<Vec<f64>> {
-    let file = File::open(path)?; // open file by given path
+fn buffer_out(buffer_name: gtk::TextBuffer, out_str: String) {
+    buffer_name.set_text("");
+    buffer_name.set_text(&out_str);
+}
+// TODO: убрать все unwrap
+fn read(path: PathBuf) -> Vec<u32> {
+    let file = File::open(path).unwrap(); // open file by given path
     let br = BufReader::new(file);
-    // create an empty vector, type of the stored elements will be inferred
     let mut v = Vec::new();
     for line in br.lines() {
-        let line = line?;
-        let n = line
-            .trim() // trim "whitespaces"
-            .parse()
-            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-        v.push(n); // push acquired integer to the vector
+        let line = line.unwrap();
+        for i in line.chars() {
+            v.push(i as u32);
+        }
     }
-    Ok(v) // everything is Ok, return vector
+    v
 }
 
-fn write(path: &str, data: Vec<f64>) -> Result<()> {
+fn _write(path: &str, data: Vec<f64>) -> Result<()> {
     let mut output = File::create(path)?;
     for i in 0..data.len() {
         if data[i] > 0.0 {
@@ -37,7 +38,7 @@ fn write(path: &str, data: Vec<f64>) -> Result<()> {
 
 fn build_ui(app: &gtk::Application) {
     let glade_src = include_str!("./layout.glade");
-    let builder = Builder::from_string(glade_src);
+    let builder = gtk::Builder::from_string(glade_src);
     // todo: make something pls.... it's awful
     let window: gtk::ApplicationWindow = builder.object("win1")
         .expect("Can't create window-main!");
@@ -51,7 +52,7 @@ fn build_ui(app: &gtk::Application) {
         .expect("Can't create output field1!");
     let txt_opt2: gtk::TextView = builder.object("txt_otp2")
         .expect("Can't create output field2!");
-    let stat_field: gtk::Entry = builder.object("stats")
+    let stat_field: gtk::TextView = builder.object("stats")
         .expect("Can't create statistic field");
     let menubar: gtk::MenuBar = builder.object("menubar")
         .expect("Can't create menubar!");
@@ -59,16 +60,16 @@ fn build_ui(app: &gtk::Application) {
     window.set_application(Some(app));
 
     // build menubar
-    let menu_file = Menu::new();
-    let menu_help = Menu::new();
+    let menu_file = gtk::Menu::new();
+    let menu_help = gtk::Menu::new();
 
-    let file = MenuItem::with_label("File");
-    let open = MenuItem::with_label("Open");
-    let save = MenuItem::with_label("Save");
-    let quit = MenuItem::with_label("Quit");
+    let file = gtk::MenuItem::with_label("File");
+    let open = gtk::MenuItem::with_label("Open");
+    let save = gtk::MenuItem::with_label("Save");
+    let quit = gtk::MenuItem::with_label("Quit");
 
-    let help = MenuItem::with_label("Help");
-    let about = MenuItem::with_label("About");
+    let help = gtk::MenuItem::with_label("Help");
+    let about = gtk::MenuItem::with_label("About");
 
     menu_file.append(&open);
     menu_file.append(&save);
@@ -91,33 +92,32 @@ fn build_ui(app: &gtk::Application) {
 
     open.connect_activate(move |_| {
         let dialog = gtk::FileChooserDialog::builder().build();
-        dialog.set_action(FileChooserAction::Open);
+        dialog.set_action(gtk::FileChooserAction::Open);
         dialog.set_title("Open File");
-        dialog.add_button("Open", ResponseType::Accept);
-        dialog.add_button("Cancel", ResponseType::Cancel);
+        dialog.add_button("Open", gtk::ResponseType::Accept);
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
         let res = dialog.run();
         if res == ResponseType::Accept {
             let filename = dialog.filename().expect("Filename to open not received!");
-            println!("{:?}", filename);
+            let file_read_buf = read(filename);
             dialog.close();
-        } else if res == ResponseType::Cancel {
+        } else if res == ResponseType::Cancel || res == gtk::ResponseType::DeleteEvent {
             dialog.close();
         }
     });
 
     save.connect_activate(move |_| {
         let dialog = gtk::FileChooserDialog::builder().build();
-        dialog.set_action(FileChooserAction::Save);
+        dialog.set_action(gtk::FileChooserAction::Save);
         dialog.set_title("Save File");
-        dialog.add_button("Save", ResponseType::Accept);
-        dialog.add_button("Cancel", ResponseType::Cancel);
+        dialog.add_button("Save", gtk::ResponseType::Accept);
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
         dialog.set_do_overwrite_confirmation(true);
         let res = dialog.run();
         if res == ResponseType::Accept {
-            let filename = dialog.filename().expect("Filename to save not received!");
-            println!("{:?}", filename);
+            // TODO: сохранение в файл
             dialog.close();
-        } else if res == ResponseType::Cancel {
+        } else if res == ResponseType::Cancel || res == gtk::ResponseType::DeleteEvent {
             dialog.close();
         }
     });
@@ -130,52 +130,47 @@ fn build_ui(app: &gtk::Application) {
         let read_buf = txt_ipt.buffer().unwrap();
         let output_buf1 = txt_opt1.buffer().unwrap();
         let output_buf2 = txt_opt2.buffer().unwrap();
-        let stats_buf = stat_field.buffer();
+        let stats_buf = stat_field.buffer().unwrap();
         let start = read_buf.start_iter();
         let end = read_buf.end_iter();
         let read_string = &read_buf
             .text(&start, &end, false)
             .expect("Can't read buffer!");
 
-        // clear buffers
-        output_buf2.set_text("");
-        output_buf1.set_text("");
-        stats_buf.set_text("");
-
-        // read input message and convert to bytes
-        let input_byte_arr = read_string.as_bytes();
-        let mut input_byte_str = String::new();
-        for i in input_byte_arr {
-            input_byte_str.add_assign(&format!("{:?},", &i));
+        // перегон считанной строки в u32 для дальнейшего сжатия и вывода
+        let mut input_str_byte: Vec<u32> = Vec::new();
+        for i in read_string.chars() {
+            input_str_byte.push(i as u32);
         };
-        // print input_byte_string to buff 1
-        output_buf1.set_text(&input_byte_str);
 
-        // make compress
-        let compress_byte = lzw::compress(read_string.as_bytes());
+        // вывод в буффер не сжатого массива
+        buffer_out(output_buf1, format!("{:?}", &input_str_byte));
 
-        let profit: f64 = compress_byte.len() as f64 / input_byte_arr.len() as f64;
+        // сжатие
+        let compress_byte = lzw::compress(&input_str_byte);
+
+        // вычисление "успешности" сжатия
+        let profit = compress_byte.len() as f64 / input_str_byte.len() as f64;
         let profit_str = format!(
-            "Compression ratio is {:.3} ({}%). Input bytes - {} and Output bytes - {}",
+            "Compression ratio is {:.3} ({}%). Input symbols - {} and Output symbols - {}",
             profit,
             (profit * 100.0).round(),
-            input_byte_arr.len(),
+            input_str_byte.len(),
             compress_byte.len(),
         );
-        stats_buf.set_text(&profit_str);
-        // preparing to output byte_string after compress
-        let mut comp_str = String::new();
-        for i in &compress_byte {
-            comp_str.add_assign(&format!("{:?},", &i));
-        };
+        // вывод статистки в буффер
+        buffer_out(stats_buf, profit_str);
 
-        // print compress_byte_string to buff 2
-        output_buf2.set_text(&comp_str);
+        // вывод в буффер сжатого массива
+        buffer_out(output_buf2, format!("{:?}", compress_byte));
     });
 }
 
 fn main() {
-    let app = Application::new(Some("com.icupken.LZW"), gio::ApplicationFlags::FLAGS_NONE);
+    let app = gtk::Application::new(
+        Some("com.icupken.LZW"),
+        gio::ApplicationFlags::FLAGS_NONE,
+    );
     app.connect_activate(build_ui);
     app.run();
 }
