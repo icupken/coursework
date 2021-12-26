@@ -1,6 +1,3 @@
-// #![allow(dead_code)]
-// #![allow(unused_variables)]
-
 use gtk::prelude::*;
 use gtk::*;
 use lzw;
@@ -8,30 +5,26 @@ use std::fs::*;
 use std::io::*;
 use std::path::PathBuf;
 
-// TODO: убрать все unwrap
-fn read(path: PathBuf) -> Vec<u32> {
+fn read(path: PathBuf) -> String {
     let file = File::open(path).unwrap(); // open file by given path
     let br = BufReader::new(file);
-    let mut v = Vec::new();
+    let mut v = String::new();
     for line in br.lines() {
         let line = line.unwrap();
-        for i in line.chars() {
-            v.push(i as u32);
-        }
+            v.push_str(&line);
     }
     v
 }
 
-fn _write(path: &str, data: Vec<f64>) -> Result<()> {
-    let mut output = File::create(path)?;
-    for i in 0..data.len() {
-        if data[i] > 0.0 {
-            write!(output, "{}\n", data[i])?;
-        }
-    }
-    Ok(())
+fn write(path: PathBuf, data: &TextBuffer) {
+    let start = data.start_iter();
+    let end = data.end_iter();
+    let mut output = File::create(path).unwrap();
+    let read_string = data
+        .text(&start, &end, false)
+        .expect("Can't read buffer!");
+    write!(output, "{}", read_string).unwrap();
 }
-
 
 fn process(ui: &Ui) {
     let start = ui.read_buf.start_iter();
@@ -79,7 +72,7 @@ fn menu_open(ui: &Ui) {
     if res == ResponseType::Accept {
         let filename = dialog.filename().expect("Filename to open not received!");
         let file_read_buf = read(filename);
-        Ui::buffer_out(&ui.read_buf, format!("{:?}",  file_read_buf));
+        Ui::buffer_out(&ui.read_buf, format!("{:?}", file_read_buf));
         dialog.close();
     } else if res == ResponseType::Cancel || res == gtk::ResponseType::DeleteEvent {
         dialog.close();
@@ -95,7 +88,8 @@ fn menu_save(ui: &Ui) {
     dialog.set_do_overwrite_confirmation(true);
     let res = dialog.run();
     if res == ResponseType::Accept {
-        // TODO: сохранение в файл
+        let filename = dialog.filename().expect("Filename to open not received!");
+        write(filename, &ui.output_buf2);
         dialog.close();
     } else if res == ResponseType::Cancel || res == gtk::ResponseType::DeleteEvent {
         dialog.close();
@@ -108,6 +102,7 @@ struct App {
     builder: Builder,
 }
 
+#[derive(Clone)]
 struct Ui {
     open: MenuItem,
     save: MenuItem,
@@ -181,10 +176,6 @@ impl Ui {
         let output_buf2 = txt_opt2.buffer().unwrap();
         let stats_buf = stat_buff.buffer().unwrap();
 
-        // FIXME:
-        // let start = read_buf.start_iter();
-        // let end = read_buf.end_iter();
-
         let about_win: gtk::Window = app.builder.object("win2")
             .expect("Can't create window-about!");
 
@@ -214,7 +205,7 @@ impl Ui {
 }
 
 fn main() {
-    // Инициализируем GTK перед продолжением.
+    // Инициализируем GTK
     if gtk::init().is_err() {
         eprintln!("failed to initialize GTK Application");
         std::process::exit(1);
@@ -223,17 +214,21 @@ fn main() {
     let ui = Ui::new(&app);
     app.window.show_all();
 
-    ui.button.clone().connect_clicked(move |_| {
-        process(&ui);
+
+    let my_ui = ui.clone();
+    ui.button.connect_clicked(move |_| {
+        process(&my_ui);
     });
 
-    // ui.open.connect_activate(move |_| {
-    //     menu_open(&ui);
-    // });
+    let my_ui = ui.clone();
+    ui.open.connect_activate(move |_| {
+        menu_open(&my_ui);
+    });
 
-    // ui.save.connect_activate(move |_| {
-    //     menu_save(&ui);
-    // });
+    let my_ui = ui.clone();
+    ui.save.connect_activate(move |_| {
+        menu_save(&my_ui);
+    });
 
     gtk::main();
 }
